@@ -1,0 +1,63 @@
+# Run everything:  docker compose up --build      then open http://localhost:8080
+# Only the DB:     docker compose up -d db         (for running the app from IntelliJ)
+# Reset all data:  docker compose down -v
+#
+# Two containers: Postgres, and one Spring Boot app that serves the UI, the REST API (/api) and
+# the STOMP-over-WebSocket endpoint (/ws) on the same port.
+
+name: realtime-chat
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: chat
+      POSTGRES_USER: chat
+      # Only applied when the data volume is first created; changing it later does NOT change the
+      # password inside an existing volume (see README troubleshooting).
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-chat-local-only}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Creates the chat_test database for the integration tests on first start.
+      - ./deploy/db-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Bound to 127.0.0.1 only, for IntelliJ runs and tests. 5433, not 5432, so it doesn't clash
+      # with a Postgres already installed on your machine.
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat -d chat"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: jdbc:postgresql://db:5432/chat
+      DATABASE_USER: chat
+      DATABASE_PASSWORD: ${DB_PASSWORD:-chat-local-only}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      INVITE_CODE: ${INVITE_CODE:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        # "started" isn't enough: Postgres accepts connections a few seconds after the container
+        # starts. Wait until pg_isready says yes, or Flyway fails on startup.
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/healthcheck.sh"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    # Time for graceful shutdown (finish requests, close sockets) before Docker sends SIGKILL.
+    stop_grace_period: 20s
+    restart: unless-stopped
+
+volumes:
+  db-data:

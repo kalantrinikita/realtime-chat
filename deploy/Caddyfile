@@ -1,0 +1,10 @@
+# Production only (docker-compose.prod.yml). Locally the Spring Boot app is reached directly.
+#
+# With SITE_ADDRESS set to your domain, Caddy obtains a Let's Encrypt certificate, renews it, and
+# redirects HTTP to HTTPS automatically. It forwards WebSocket upgrades transparently and adds
+# X-Forwarded-Proto/Host, which the app uses to know it is being served over HTTPS.
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+	reverse_proxy app:8080
+}

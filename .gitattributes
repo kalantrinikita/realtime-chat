@@ -1,0 +1,5 @@
+# Shell scripts and the Caddyfile run inside Linux containers. If Git on Windows checks them out
+# with CRLF line endings, the healthcheck fails with "bad interpreter: /usr/bin/env bash^M".
+* text=auto
+*.sh text eol=lf
+Caddyfile text eol=lf

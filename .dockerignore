@@ -1,0 +1,9 @@
+# The build context is the repo root; keep it small and free of local build output and secrets.
+.git
+.env
+**/node_modules
+**/dist
+**/target
+backend/src/main/resources/static
+docs
+*.md

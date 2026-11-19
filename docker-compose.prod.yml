@@ -1,0 +1,48 @@
+# Overlay for a server with a real domain. Used together with the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Adds Caddy in front for automatic HTTPS (Let's Encrypt). Requires a .env with SITE_ADDRESS,
+# DB_PASSWORD and INVITE_CODE, a DNS A record pointing the domain at this server, and ports 80/443
+# open. Needs Docker Compose v2.24+ for the !reset / !override tags.
+
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD to a long random value}
+    ports: !reset []          # never publish Postgres on a public machine
+
+  app:
+    environment:
+      DATABASE_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD to a long random value}
+      # Served over HTTPS now: Secure session cookie with the __Host- prefix.
+      COOKIE_SECURE: "true"
+      # A public URL means anyone can find the sign-up page; require a code you hand out.
+      INVITE_CODE: ${INVITE_CODE:?Set INVITE_CODE so random visitors cannot sign up}
+      # Belt and braces for the WebSocket origin check behind the proxy (the app also honours
+      # X-Forwarded-* headers, see application.yml).
+      ALLOWED_ORIGINS: https://${SITE_ADDRESS:?Set SITE_ADDRESS to your domain, e.g. chat.example.com}
+    ports: !reset []          # only reachable through Caddy
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?Set SITE_ADDRESS to your domain, e.g. chat.example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here. Losing them on every redeploy would hit Let's Encrypt's rate limit
+      # (a handful of duplicate certificates per week) and leave the site without HTTPS for days.
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"         # certificate challenge + redirect to HTTPS
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
