@@ -9,6 +9,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.concurrent.TimeUnit;
 
+/** Web setup: which API paths need a login, and caching for the frontend files. */
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
     private final AuthInterceptor authInterceptor;
@@ -17,6 +18,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
         this.authInterceptor = authInterceptor;
     }
 
+    /** Every /api path needs a login, except health, config and sign-in/sign-up. */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
@@ -24,11 +26,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/health", "/api/config", "/api/auth/**");
     }
 
-    /**
-     * Vite fingerprints the bundle (index-3f9a1c.js), so a file under /assets never changes and can
-     * be cached for a year. index.html is served with no-cache (application.yml), so a deploy is
-     * picked up on the next page load.
-     */
+    /** Built frontend files have a hash in their name, so they can be cached for a long time. */
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/assets/**")

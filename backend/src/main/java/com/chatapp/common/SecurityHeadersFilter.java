@@ -9,13 +9,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-/**
- * Browser hardening headers on every response.
- *
- * <p>The CSP lets the page load only its own bundle, so even if an XSS bug slipped in, injected
- * inline script could not run (React already escapes all message text). ws:/wss: are listed
- * because older Safari versions don't treat 'self' as covering WebSocket URLs.
- */
+/** Adds browser security headers to every response. */
 @Component
 public class SecurityHeadersFilter extends OncePerRequestFilter {
     private static final String CSP = "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; "

@@ -17,13 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
-/**
- * Sign-up, login, logout and "who am I".
- *
- * <p>Every POST declares {@code consumes = application/json}. That is part of the CSRF defence: an
- * HTML form on another site can't send that content type, and a cross-origin fetch() that does
- * triggers a CORS preflight this app never approves. Spring answers anything else with 415.
- */
+/** REST endpoints for sign-up, login, logout and the current user. */
+
 @RestController
 @RequestMapping("/api")
 public class AuthController {
@@ -45,14 +40,14 @@ public class AuthController {
         this.jdbc = jdbc;
     }
 
-    /** Used by the Docker healthcheck; touching the DB makes "healthy" mean "can actually serve". */
+    /** Used by the Docker healthcheck; to verify that the DB makes "can actually serve". */
     @GetMapping("/health")
     public Map<String, Object> health() {
         jdbc.queryForObject("SELECT 1", Integer.class);
         return Map.of("status", "ok", "liveSockets", liveSessions.count());
     }
 
-    /** What the sign-up form needs to know before anyone is logged in. */
+    /** Settings the sign-up page needs before login. */
     @GetMapping("/config")
     public Map<String, Object> config() {
         return Map.of("inviteRequired", props.inviteRequired());
@@ -74,11 +69,7 @@ public class AuthController {
                 .body(Map.of("user", result.user()));
     }
 
-    /**
-     * Also closes WebSockets opened with this session. Otherwise a tab that was logged out elsewhere
-     * (or on a shared computer) would keep receiving messages over a socket that was authenticated
-     * before the logout.
-     */
+    /** Ends the session and closes any WebSockets opened with it. */
     @PostMapping(path = "/auth/logout", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Void> logout(HttpServletRequest request) {
         cookies.read(request).flatMap(auth::logout).ifPresent(liveSessions::closeSession);

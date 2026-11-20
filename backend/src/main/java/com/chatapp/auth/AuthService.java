@@ -22,21 +22,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-/**
- * Email + password accounts with opaque, server-side sessions.
- *
- * <p>Why server-side sessions instead of JWTs: logout must take effect immediately, including on
- * WebSocket connections that are already open (see {@code LiveSessionRegistry#closeSession}). A
- * self-contained JWT stays valid until it expires unless you add a revocation list, which is a
- * session table again.
- *
- * <p>The token travels in an HttpOnly cookie because the browser WebSocket API cannot set an
- * Authorization header on the handshake, but it does send cookies. Only SHA-256(token) is stored,
- * so a leaked database backup is not a list of live logins.
- */
+/** Sign-up, login, logout and session checks. Sessions are stored in the database. */
+
 @Service
 public class AuthService {
-    /** Deliberately loose: the real test of an address is "can it receive mail", which we don't do. */
+    /** Simple format check: something@something.something */
     private static final Pattern EMAIL = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final RowMapper<User> USER = (rs, i) -> new User(rs.getLong("id"), rs.getString("email"), rs.getString("display_name"));
 
@@ -48,11 +38,7 @@ public class AuthService {
     private final PasswordHasher hasher;
     private final AppProperties props;
     private final SecureRandom random = new SecureRandom();
-    /**
-     * Hash of a random password, checked when a login names an unknown email. Without it, "no such
-     * email" answers in ~1 ms and "wrong password" in ~300 ms, and that difference tells an attacker
-     * which emails have accounts.
-     */
+    /** Checked when the email doesn't exist, so a failed login takes the same time either way. */
     private final String dummyHash;
 
     public AuthService(JdbcTemplate jdbc, PlatformTransactionManager txManager, PasswordHasher hasher, AppProperties props) {
@@ -70,7 +56,7 @@ public class AuthService {
         String email = normalizeEmail(rawEmail);
         validatePassword(password);
         String displayName = normalizeDisplayName(rawDisplayName, email);
-        String hash = hasher.hash(password); // outside the transaction: slow, and needs no DB
+        String hash = hasher.hash(password); // slow, so done before the transaction
         try {
             return Objects.requireNonNull(tx.execute(status -> {
                 Long id = jdbc.queryForObject(
@@ -80,8 +66,6 @@ public class AuthService {
                 return new SessionResult(user, createSession(user.id()));
             }));
         } catch (DuplicateKeyException e) {
-            // Rely on the UNIQUE constraint, not "SELECT then INSERT": two sign-ups racing for the
-            // same email would both pass the SELECT.
             throw AppException.conflict("An account with this email already exists");
         }
     }
@@ -136,11 +120,6 @@ public class AuthService {
 
     // ---- validation ----------------------------------------------------------------------------
 
-    /**
-     * Lower-cases with {@link Locale#ROOT} on purpose: if the JVM's default locale is Turkish,
-     * "I".toLowerCase() is the dotless "ı", which would silently create a different account key
-     * depending on the server it runs on.
-     */
     static String normalizeEmail(String raw) {
         if (raw == null) throw AppException.badRequest("Email is required");
         String email = raw.trim().toLowerCase(Locale.ROOT);
@@ -160,8 +139,6 @@ public class AuthService {
         String name = raw == null ? "" : raw.strip();
         if (name.isEmpty()) name = email.substring(0, email.indexOf('@'));
         if (name.codePointCount(0, name.length()) > 50) throw AppException.badRequest("Display name must be at most 50 characters");
-        // Control and bidi-format characters (newlines, right-to-left overrides used for spoofing,
-        // NUL which Postgres rejects) have no place in a name shown to other people.
         if (name.codePoints().anyMatch(cp -> Character.isISOControl(cp) || Character.getType(cp) == Character.FORMAT)) {
             throw AppException.badRequest("Display name contains invalid characters");
         }

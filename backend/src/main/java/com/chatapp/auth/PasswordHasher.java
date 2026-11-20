@@ -10,28 +10,8 @@ import java.util.Base64;
 import java.util.concurrent.Semaphore;
 
 /**
- * PBKDF2-HMAC-SHA256 password hashing using only the JDK.
- *
- * <p>Why PBKDF2 and not bcrypt/Argon2: it ships with every JDK (no native library, nothing to break
- * on Alpine/musl images), and at OWASP's recommended 600k iterations it is an accepted choice.
- * Argon2id is stronger against GPU attacks but needs BouncyCastle; the stored format below embeds
- * the algorithm and iteration count, so we can move to a stronger scheme later and rehash each user
- * transparently on their next successful login.
- *
- * <p>Stored format: {@code pbkdf2-sha256$<iterations>$<salt b64>$<hash b64>}.
- *
- * <p>Two operational details that bite in production:
- * <ul>
- *   <li>Hashing is deliberately slow CPU work (~100-400 ms). Every request runs on a virtual thread,
- *       and virtual threads share a small pool of carrier threads (one per core). Ten concurrent
- *       logins could therefore occupy every carrier and stall all chat traffic. A semaphore caps
- *       concurrent hashes below the core count, so login bursts queue instead of starving
- *       the rest of the server.</li>
- *   <li>Passwords are Unicode-normalised (NFKC) before hashing. The same visible password typed on
- *       macOS and on Windows can arrive as different code point sequences ("é" precomposed vs. "e"
- *       plus a combining accent); without normalisation the user would be locked out on the other
- *       device.</li>
- * </ul>
+ * Hashes and checks passwords with PBKDF2-HMAC-SHA256.
+ * Stored as {@code pbkdf2-sha256$<iterations>$<salt>$<hash>}.
  */
 public final class PasswordHasher {
     public static final int DEFAULT_ITERATIONS = 600_000;
@@ -59,7 +39,7 @@ public final class PasswordHasher {
         return FORMAT_ID + "$" + iterations + "$" + b64.encodeToString(salt) + "$" + b64.encodeToString(derived);
     }
 
-    /** Constant-time comparison; returns false (never throws) for malformed stored values. */
+    /** Checks a password against a stored hash. Returns false if the stored value is invalid. */
     public boolean verify(String password, String stored) {
         String[] parts = stored.split("\\$");
         if (parts.length != 4 || !FORMAT_ID.equals(parts[0])) return false;

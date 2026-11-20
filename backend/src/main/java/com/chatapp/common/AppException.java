@@ -1,13 +1,6 @@
 package com.chatapp.common;
 
-/**
- * A failure we expect and can explain to the client (bad input, not found, not allowed).
- *
- * <p>One exception type shared by the REST API and the WebSocket gateway so the same domain error
- * surfaces identically on both transports: REST maps {@link #status} to the HTTP status line, the
- * gateway sends {@link #code} inside an {@code error} frame. {@link #retryable} tells the client
- * whether resending the same request could succeed (it never can for a validation error).
- */
+/** An expected error that is sent back to the client, with an HTTP status and an error code. */
 public class AppException extends RuntimeException {
     private final int status;
     private final String code;

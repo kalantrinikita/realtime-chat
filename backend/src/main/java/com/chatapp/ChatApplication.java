@@ -14,11 +14,7 @@ public class ChatApplication {
         SpringApplication.run(ChatApplication.class, args);
     }
 
-    /**
-     * Password hashing is deliberately slow CPU work. Requests run on virtual threads, which share
-     * one carrier thread per core, so a burst of logins could occupy every core and stall chat
-     * traffic. Capping concurrent hashes at cores-1 keeps one core free for everything else.
-     */
+    /** Limits how many passwords are hashed at once, so logins can't use every CPU core. */
     @Bean
     PasswordHasher passwordHasher() {
         int permits = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);

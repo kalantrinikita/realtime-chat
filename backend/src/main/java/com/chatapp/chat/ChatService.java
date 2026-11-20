@@ -19,17 +19,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Conversations and messages. Transport-agnostic: the REST controller and the STOMP controller
- * both call into this class, so the ordering and idempotency rules live in exactly one place.
- *
- * <p>Uses TransactionTemplate rather than {@code @Transactional} on purpose: sendMessage needs to
- * roll back in a non-exceptional case (a duplicate retry), and the transaction boundary is the
- * correctness argument, so it should be visible in the code rather than implied by a proxy.
- */
+/** Conversations and messages. Used by both the REST and the WebSocket controllers. */
 @Service
 public class ChatService {
-    /** Must match the CHECK constraint in V1__init.sql. Counted in code points, see validateBody. */
+    /** Must match the CHECK constraint in V1__init.sql. */
     public static final int MAX_MESSAGE_CHARS = 4000;
     public static final int MAX_PAGE_SIZE = 100;
 
@@ -46,16 +39,7 @@ public class ChatService {
         this.tx = new TransactionTemplate(txManager);
     }
 
-    // ---- conversations -------------------------------------------------------------------------
-
-    /**
-     * Get-or-create the 1:1 conversation between two users.
-     *
-     * <p>INSERT ... ON CONFLICT DO NOTHING, then SELECT. The obvious "SELECT, and INSERT if
-     * missing" races: two users starting a chat with each other at the same moment both see
-     * "missing" and both insert. The pair is stored in canonical order (low id, high id) under a
-     * UNIQUE constraint, so only one row can ever exist.
-     */
+    /** Returns the conversation between two users, creating it if it doesn't exist yet. */
     public ConversationView startConversation(User me, User other) {
         if (me.id() == other.id()) throw AppException.badRequest("You can't start a conversation with yourself");
         long low = Math.min(me.id(), other.id());
@@ -68,7 +52,7 @@ public class ChatService {
                 .orElseThrow();
     }
 
-    /** Most recently active first; one query returns the other person and the latest message. */
+    /** The user's conversations, most recent first, with the other person and the last message. */
     public List<ConversationView> listConversations(long me) {
         return jdbc.query("""
                 SELECT c.id, c.last_seq, c.created_at, c.last_message_at,
@@ -93,19 +77,9 @@ public class ChatService {
                 me, me, me);
     }
 
-    // ---- messages ------------------------------------------------------------------------------
-
     /**
-     * History and catch-up in one method.
-     * <ul>
-     *   <li>{@code afterSeq} set: messages with seq &gt; afterSeq, oldest first. Used after a reconnect
-     *       or when the client spots a gap. Because seq is gap-free and assigned in commit order
-     *       (see sendMessage), "after N" is a cursor that cannot skip a message.</li>
-     *   <li>otherwise: the newest page with seq &lt; beforeSeq (or the very newest), returned oldest
-     *       first for display.</li>
-     * </ul>
-     * Keyset paging on (conversation_id, seq) uses the unique index directly. OFFSET paging would
-     * get slower with every page and shift when new messages arrive.
+     * A page of messages, oldest first. With {@code afterSeq}: the messages after that seq (used to
+     * catch up). Otherwise: the newest messages before {@code beforeSeq}.
      */
     public List<MessageView> listMessages(long me, long conversationId, Long afterSeq, Long beforeSeq, int limit) {
         requireMember(me, conversationId);
@@ -122,21 +96,8 @@ public class ChatService {
     }
 
     /**
-     * Stores a message and gives it the next number (seq) in its conversation.
-     *
-     * <p><b>Ordering.</b> {@code UPDATE ... SET last_seq = last_seq + 1 ... RETURNING} row-locks the
-     * conversation until this transaction commits, so concurrent senders in the same chat queue up
-     * and seq order equals commit order. A global auto-increment id would not give that: tx A takes
-     * id 10, tx B takes 11 and commits first; a client asking for "after 9" sees 11, moves its cursor
-     * past 10, and never sees 10 once A commits. Different conversations never wait on each other.
-     *
-     * <p><b>No duplicates.</b> The client sends a clientMsgId and reuses it when it retries after a
-     * dropped connection. If the insert hits the (sender_id, client_msg_id) unique key, we roll back,
-     * which also undoes the last_seq + 1, and return the original message. Committing the increment
-     * would burn a number and leave a permanent hole that every client would try to fill forever.
-     *
-     * <p>Pushing to other users happens in the caller after this returns, i.e. after commit, so
-     * nobody is ever shown a message that then gets rolled back.
+     * Saves a message with the next seq in its conversation. If it's a retry (same clientMsgId),
+     * nothing new is saved and the original message is returned.
      */
     public SendResult sendMessage(long senderId, long conversationId, UUID clientMsgId, String body) {
         validateBody(body);

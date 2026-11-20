@@ -5,10 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.time.Duration;
 import java.util.List;
 
-/**
- * App-specific settings ({@code chat.*} in application.yml, each overridable by env var).
- * The ones that must change for a public deployment: COOKIE_SECURE and INVITE_CODE.
- */
+/** App settings from the {@code chat.*} section of application.yml. */
 @ConfigurationProperties(prefix = "chat")
 public record AppProperties(
         boolean cookieSecure,
@@ -23,11 +20,7 @@ public record AppProperties(
                 : allowedOrigins.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 
-    /**
-     * Browsers only accept a {@code __Host-} cookie if it is Secure, Path=/ and has no Domain.
-     * That prefix stops a sibling subdomain from overwriting our session cookie, so we use it
-     * whenever we run over HTTPS. Plain-HTTP localhost can't, hence the fallback name.
-     */
+    /** Session cookie name. The {@code __Host-} prefix only works over HTTPS. */
     public String cookieName() {
         return cookieSecure ? "__Host-sid" : "sid";
     }

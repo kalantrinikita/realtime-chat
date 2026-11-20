@@ -10,12 +10,8 @@ import java.io.IOException;
 import java.util.Optional;
 
 /**
- * Guards /api/** (minus the public endpoints, see WebMvcConfig). On success the current user is
- * put on the request, where controllers read it with {@code @RequestAttribute(CURRENT_USER)}.
- *
- * <p>Deliberately not Spring Security: one cookie check is all this app needs, and Security's
- * defaults (CSRF tokens, session fixation handling, its own STOMP rules) would be more to explain
- * and configure than the feature itself.
+ * Checks the session cookie on API requests and returns 401 if there's no valid session.
+ * Controllers get the signed-in user with {@code @RequestAttribute(CURRENT_USER)}.
  */
 @Component
 public class AuthInterceptor implements HandlerInterceptor {

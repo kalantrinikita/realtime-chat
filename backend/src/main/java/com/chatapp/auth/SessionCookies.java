@@ -9,10 +9,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.Optional;
 
-/**
- * Reads and writes the session cookie. Shared by the REST interceptor and the WebSocket handshake,
- * so both channels authenticate exactly the same way.
- */
+/** Reads and writes the session cookie, for both the REST API and the WebSocket. */
 @Component
 public class SessionCookies {
     private final AppProperties props;
@@ -32,11 +29,7 @@ public class SessionCookies {
         return Optional.empty();
     }
 
-    /**
-     * HttpOnly: page JavaScript (and so any XSS) can't read the token.
-     * SameSite=Lax: not sent on cross-site POSTs, the first line of defence against CSRF.
-     * Secure: HTTPS only; switched on with COOKIE_SECURE once deployed behind TLS.
-     */
+    /** Builds the Set-Cookie value for a new session. */
     public String create(String token) {
         return build(token, props.sessionTtl());
     }

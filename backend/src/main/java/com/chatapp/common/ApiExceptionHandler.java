@@ -14,11 +14,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Map;
 
-/**
- * Every REST error has the same shape, {@code {"error": {"code", "message"}}}, so the frontend has
- * one error path. Unexpected exceptions are logged with their stack trace but never echoed to the
- * client, because internal messages leak table names, SQL and file paths.
- */
+/** Turns errors from the REST API into JSON: {@code {"error": {"code", "message"}}}. */
 @RestControllerAdvice
 public class ApiExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);

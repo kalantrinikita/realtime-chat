@@ -1,11 +1,8 @@
 package com.chatapp.chat;
 
 /**
- * Wire-facing views. Timestamps are epoch milliseconds: unambiguous across time zones, trivially
- * parsed by JavaScript, and they keep Jackson free of java.time modules.
- *
- * <p>Ordering never uses {@code createdAt}: device clocks drift, and two messages can share a
- * millisecond. {@code seq} is the only ordering key; {@code createdAt} is for display.
+ * Data sent to the client. Times are epoch milliseconds.
+ * Messages are ordered by {@code seq}; {@code createdAt} is only for display.
  */
 public final class ChatModels {
     private ChatModels() {}
@@ -28,9 +25,6 @@ public final class ChatModels {
             MessageView lastMessage,
             long updatedAt) {}
 
-    /**
-     * Result of a send. {@code duplicate} means the client retried a message we had already stored;
-     * the caller acks it again but must not fan it out a second time.
-     */
+    /** Result of sending a message. {@code duplicate} is true if it was a retry of a saved message. */
     public record SendResult(MessageView message, long userLow, long userHigh, boolean duplicate) {}
 }
