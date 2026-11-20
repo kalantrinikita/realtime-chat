@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { Thread } from '../chatState';
 import type { Conversation, PendingMessage, User } from '../types';
-import { formatTime } from './format';
+import { formatClock, formatDay, sameDay } from './format';
 
 const MAX_CHARS = 4000;
 
@@ -85,18 +85,28 @@ export function ConversationPane({ me, conversation, thread, pending, onSend, on
           <p className="muted center">No messages yet. Say hi 👋</p>
         )}
 
-        {messages.map((m) => {
+        {messages.map((m, i) => {
           const mine = m.senderId === me.id;
+          // Day label above the first message of each day. Messages are already in seq order.
+          const newDay = i === 0 || !sameDay(messages[i - 1]!.createdAt, m.createdAt);
           return (
-            <div key={m.seq} className={`bubble ${mine ? 'mine' : 'theirs'}`} data-seq={m.seq}>
-              <p>{m.body}</p>
-              <span className="meta">
-                {formatTime(m.createdAt)}
-                {mine && <span title="Delivered to server"> ✓</span>}
-              </span>
-            </div>
+              <Fragment key={m.seq}>
+                {newDay && <div className="day-divider">{formatDay(m.createdAt)}</div>}
+                <div className={`bubble ${mine ? 'mine' : 'theirs'}`} data-seq={m.seq}>
+                  <p>{m.body}</p>
+                  <span className="meta">
+                  {formatClock(m.createdAt)}
+                    {mine && <span title="Delivered to server"> ✓</span>}
+                </span>
+                </div>
+              </Fragment>
           );
         })}
+
+        {pending.length > 0 &&
+            (messages.length === 0 || !sameDay(messages[messages.length - 1]!.createdAt, Date.now())) && (
+                <div className="day-divider">Today</div>
+            )}
 
         {pending.map((p) => (
           <div key={p.clientMsgId} className={`bubble mine ${p.status}`}>
