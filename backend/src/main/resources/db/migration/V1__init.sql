@@ -1,30 +1,4 @@
--- Initial schema.
---
--- Design notes (the "why" behind the constraints; the app relies on every one of them):
---
--- * users.email is stored already lower-cased by the application, and the CHECK makes that an
---   invariant the database enforces, so "Alice@x.com" and "alice@x.com" can never become two
---   accounts even if a future code path forgets to normalise.
---
--- * sessions store a SHA-256 of the token, never the token itself: a leaked database backup must
---   not be a list of live logins.
---
--- * conversations store the pair in canonical order (user_low < user_high) with a UNIQUE
---   constraint. When Alice and Bob both press "start chat" at the same moment, both INSERTs target
---   the same (low, high) key, so exactly one row can exist; the loser gets ON CONFLICT DO NOTHING
---   and reads the winner's row.
---
--- * conversations.last_seq is the per-conversation message counter. Sending a message does
---   UPDATE ... SET last_seq = last_seq + 1 ... RETURNING, which row-locks the conversation until
---   commit. That makes seq allocation order identical to commit order inside a conversation, which
---   is what lets clients use "give me everything after seq N" as a gap-free cursor. Different
---   conversations never contend with each other.
---
--- * messages (conversation_id, seq) UNIQUE is both the ordering guarantee and the index that serves
---   history pages and resync queries.
---
--- * messages (sender_id, client_msg_id) UNIQUE is the idempotency key: a client that retries a send
---   after a dropped connection gets the original message back instead of a duplicate.
+-- Initial schema: users, sessions, conversations and messages.
 
 CREATE TABLE users (
     id            BIGSERIAL PRIMARY KEY,
@@ -55,8 +29,7 @@ CREATE TABLE conversations (
     CONSTRAINT conversations_pair_ordered CHECK (user_low < user_high),
     CONSTRAINT conversations_pair_unique  UNIQUE (user_low, user_high)
 );
--- The UNIQUE index above already serves lookups by user_low (leading column); this one serves
--- "conversations where I am user_high".
+-- Finds conversations by user_high (user_low is covered by the UNIQUE index above).
 CREATE INDEX conversations_user_high_idx ON conversations (user_high);
 
 CREATE TABLE messages (
@@ -69,7 +42,6 @@ CREATE TABLE messages (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT messages_conversation_seq_unique UNIQUE (conversation_id, seq),
     CONSTRAINT messages_idempotency_unique      UNIQUE (sender_id, client_msg_id),
-    -- Backstop for the application-level limit. char_length counts Unicode code points, the same
-    -- unit the server validates with (not UTF-16 units, which would count an emoji twice).
+    -- Same limit as ChatService.MAX_MESSAGE_CHARS.
     CONSTRAINT messages_body_length CHECK (char_length(body) BETWEEN 1 AND 4000)
 );

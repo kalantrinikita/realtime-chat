@@ -8,11 +8,7 @@ import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 import java.security.Principal;
 import java.util.Map;
 
-/**
- * Makes the user id the STOMP Principal name. That is what lets the server address a person rather
- * than a socket: {@code convertAndSendToUser("42", "/queue/messages", ...)} reaches every tab and
- * device user 42 has open.
- */
+/** Uses the user id as the WebSocket user name, so the server can send to a user by id. */
 final class UserIdHandshakeHandler extends DefaultHandshakeHandler {
 
     record UserPrincipal(String name) implements Principal {

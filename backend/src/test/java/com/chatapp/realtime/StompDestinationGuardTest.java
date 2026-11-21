@@ -30,7 +30,7 @@ class StompDestinationGuardTest {
 
     @Test
     void blocksSubscribingToAnotherSessionsResolvedQueue() {
-        // What /user/queue/messages turns into for session "2": guessable, so it must be refused.
+        // The internal queue name for session "2" must be refused.
         assertNull(guard.preSend(frame(StompCommand.SUBSCRIBE, "/queue/messages-user2"), channel));
         assertNull(guard.preSend(frame(StompCommand.SUBSCRIBE, "/queue/messages"), channel));
         assertNull(guard.preSend(frame(StompCommand.SUBSCRIBE, null), channel));

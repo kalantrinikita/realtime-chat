@@ -12,22 +12,8 @@ import org.springframework.stereotype.Component;
 import java.util.Set;
 
 /**
- * Locks down which STOMP destinations a browser may use. Without this, two holes exist by default:
- *
- * <ol>
- *   <li><b>Eavesdropping.</b> A subscription to {@code /user/queue/messages} is rewritten by Spring
- *       to a per-session queue such as {@code /queue/messages-user3}. The suffix is the WebSocket
- *       session id, which on Tomcat is a small incrementing number. Any client could SUBSCRIBE
- *       to {@code /queue/messages-user2} directly and read someone else's messages.</li>
- *   <li><b>Spoofing.</b> The simple broker accepts SEND to any broker destination, so a client
- *       could SEND straight to {@code /queue/messages-user2} and inject a fake message that never
- *       went through validation, the database or the sender check.</li>
- * </ol>
- *
- * Only the four personal queues may be subscribed to, and SEND is only allowed to /app/*
- * (our controller). Offending frames are dropped (returning null) rather than answered with an
- * exception: with ordered receiving enabled, Spring doesn't turn interceptor exceptions into
- * STOMP ERROR frames anyway, and silence gives a prober nothing to work with.
+ * Controls what a browser can do over STOMP: subscribe only to its own queues below,
+ * and send only to /app/*. Anything else is dropped.
  */
 @Component
 public class StompDestinationGuard implements ChannelInterceptor {

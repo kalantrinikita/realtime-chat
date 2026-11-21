@@ -16,7 +16,7 @@ class MessageValidationTest {
 
     @Test
     void countsCodePointsNotUtf16Units() {
-        // 4000 emoji are 8000 UTF-16 units but 4000 characters to a human (and to Postgres).
+        // An emoji counts as one character.
         assertDoesNotThrow(() -> ChatService.validateBody("😀".repeat(4000)));
         assertThrows(AppException.class, () -> ChatService.validateBody("x".repeat(4001)));
     }

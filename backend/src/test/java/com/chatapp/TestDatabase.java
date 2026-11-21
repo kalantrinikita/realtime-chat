@@ -6,11 +6,8 @@ import org.flywaydb.core.Flyway;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Integration tests run against a real Postgres, because what they check (row locks, unique
- * constraints, rollback behaviour under concurrency) is database behaviour a mock would just assume.
- *
- * <p>Skipped unless TEST_DATABASE_URL is set, so `mvn package` and the Docker build work without a
- * database. Refuses any database whose name doesn't contain "test", because it truncates tables.
+ * Real Postgres connection for integration tests. Tests are skipped unless TEST_DATABASE_URL is set,
+ * and the database name must contain "test" because the tables get cleared.
  */
 public final class TestDatabase {
     private TestDatabase() {}

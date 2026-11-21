@@ -1,15 +1,11 @@
-# Every value can be overridden with an environment variable (the ${VAR:default} placeholders).
-# The defaults are for running the app from IntelliJ against `docker compose up -d db`
-# (Postgres published on localhost:5433), so no run-configuration setup is needed.
+# ${VAR:default} means: use the environment variable VAR if it's set, otherwise the default.
+# The defaults work for running from IntelliJ with the database in Docker.
 
 server:
   port: ${PORT:8080}
-  # Behind a TLS-terminating proxy (Caddy in production) the app itself only sees plain HTTP.
-  # Honouring X-Forwarded-Proto/Host makes Tomcat report the real scheme and host, which the
-  # WebSocket same-origin check and Secure cookies depend on. Without it, every browser on
-  # https://your-domain is rejected as "cross-origin" (https vs http).
+  # Use the X-Forwarded-* headers from the proxy (Caddy) in production.
   forward-headers-strategy: native
-  # Finish in-flight requests on SIGTERM instead of cutting them off.
+  # Let running requests finish when the app stops.
   shutdown: graceful
 
 spring:
@@ -20,8 +16,7 @@ spring:
     username: ${DATABASE_USER:chat}
     password: ${DATABASE_PASSWORD:chat-local-only}
     hikari:
-      # The pool doubles as a bulkhead: at most this many statements hit Postgres at once, no
-      # matter how many requests or STOMP messages arrive concurrently.
+      # Maximum number of database connections.
       maximum-pool-size: ${DATABASE_POOL_SIZE:10}
       connection-timeout: 5000
   threads:
@@ -34,15 +29,13 @@ spring:
     resources:
       cache:
         cachecontrol:
-          # index.html must always be revalidated or browsers keep loading the previous deploy's
-          # bundle. Fingerprinted /assets/** get a long cache in WebMvcConfig instead.
           no-cache: true
 
 chat:
   cookie-secure: ${COOKIE_SECURE:false}
   session-ttl: ${SESSION_TTL:30d}
   invite-code: ${INVITE_CODE:}
-  # Extra origins allowed to open the WebSocket. Empty = same-origin only (Spring's default).
+  # Extra origins allowed to open the WebSocket.
   allowed-origins: ${ALLOWED_ORIGINS:}
 
 logging:

@@ -13,15 +13,11 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Keeps a handle on every open WebSocket so we can close the ones belonging to a login session
- * when it logs out. Spring's broker tracks subscriptions, not "which sockets were opened with
- * which cookie", so this small registry fills that gap.
- */
+/** Keeps track of open WebSockets, so the ones for a login session can be closed on logout. */
 @Component
 public class LiveSessionRegistry {
     private static final Logger log = LoggerFactory.getLogger(LiveSessionRegistry.class);
-    /** Application close code (4000-4999 range): tells the browser "you were logged out, don't reconnect". */
+    /** Close code that tells the browser it was logged out and shouldn't reconnect. */
     public static final CloseStatus LOGGED_OUT = new CloseStatus(4001, "Logged out");
 
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
@@ -42,6 +38,7 @@ public class LiveSessionRegistry {
         };
     }
 
+    /** Closes every WebSocket that was opened with this login session. */
     public void closeSession(byte[] tokenHash) {
         for (WebSocketSession s : sessions.values()) {
             Object hash = s.getAttributes().get(SessionHandshakeInterceptor.TOKEN_HASH);

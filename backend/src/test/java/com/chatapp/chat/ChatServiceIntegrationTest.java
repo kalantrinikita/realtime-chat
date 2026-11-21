@@ -36,8 +36,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The guarantees that make the chat correct, checked against a real Postgres under concurrency.
- * Run with: TEST_DATABASE_URL=jdbc:postgresql://localhost:5433/chat_test mvn test
+ * Checks message order, duplicates and concurrent sends against a real Postgres.
+ * Run with: TEST_DATABASE_URL=jdbc:postgresql://localhost:5432/chat_test mvn test
  */
 @EnabledIfEnvironmentVariable(named = "TEST_DATABASE_URL", matches = ".+")
 class ChatServiceIntegrationTest {

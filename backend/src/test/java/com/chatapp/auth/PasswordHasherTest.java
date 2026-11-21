@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PasswordHasherTest {
-    // Low iteration count keeps the suite fast; the stored format records the count per hash.
+    // Fewer iterations so the tests run fast.
     private final PasswordHasher hasher = new PasswordHasher(1_000, 2);
 
     @Test

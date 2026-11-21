@@ -12,14 +12,7 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Authenticates the WebSocket handshake with the same session cookie as the REST API.
- *
- * <p>The browser WebSocket API can't set headers, but it does send cookies on the upgrade
- * request. Checking here, before the connection is upgraded, means an unauthenticated client gets
- * a plain HTTP 401 and never a socket. That's simpler and cheaper than accepting the connection
- * and validating a token inside the STOMP CONNECT frame.
- */
+/** Checks the session cookie before a WebSocket opens. Without a valid session it returns 401. */
 final class SessionHandshakeInterceptor implements HandshakeInterceptor {
     static final String USER = "chat.user";
     static final String TOKEN_HASH = "chat.tokenHash";
@@ -45,8 +38,7 @@ final class SessionHandshakeInterceptor implements HandshakeInterceptor {
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return false;
         }
-        // Copied into the WebSocket session: used for the STOMP Principal and to close this
-        // socket if the same login session logs out elsewhere.
+        // Kept on the WebSocket session for later use.
         attributes.put(USER, session.get().user());
         attributes.put(TOKEN_HASH, session.get().tokenHash());
         return true;

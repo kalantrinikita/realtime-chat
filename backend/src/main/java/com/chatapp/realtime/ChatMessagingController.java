@@ -23,11 +23,7 @@ import java.security.Principal;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * The live side of chat. Spring routes STOMP frames here; everything about what a "message" means
- * (who may send where, its number, de-duplication, who receives it) is decided in this class and
- * in ChatService.
- */
+/** Handles messages sent over the WebSocket: hello and send. */
 @Controller
 public class ChatMessagingController {
     private static final Logger log = LoggerFactory.getLogger(ChatMessagingController.class);
@@ -41,14 +37,8 @@ public class ChatMessagingController {
     }
 
     /**
-     * STOMP SUBSCRIBE has no acknowledgement, so a client can't tell when its subscriptions are
-     * live. If it fetched missed messages right after subscribing, a message arriving in between
-     * could be in neither the fetch nor the push and be silently lost.
-     *
-     * The client therefore subscribes first, then sends /app/hello. Because receive order is
-     * preserved per session (WebSocketConfig), the SUBSCRIBE frames have been fully processed by the
-     * time this runs, so "ready" proves the subscriptions are live. Only then does the client fetch
-     * what it missed.
+     * The browser sends this after subscribing. The "ready" reply tells it the subscriptions are
+     * active, so it can now load any messages it missed.
      */
     @MessageMapping("/hello")
     @SendToUser(destinations = "/queue/ready", broadcast = false)
@@ -60,13 +50,7 @@ public class ChatMessagingController {
     }
 
     /**
-     * Store, then acknowledge to the sending tab, then push to every open tab of both people.
-     * The ack goes only to the session that sent it (broadcast = false); the push goes to all of
-     * the sender's sessions too, so their other tabs and devices stay in sync. The sending tab
-     * receives both and de-duplicates by seq.
-     *
-     * Runs on the inbound channel's thread for this session, one frame at a time, so two
-     * messages typed quickly in one tab are stored in the order they were sent.
+     * Saves the message, acks it to the sending tab, then pushes it to every open tab of both users.
      */
     @MessageMapping("/send")
     @SendToUser(destinations = "/queue/acks", broadcast = false)
@@ -79,8 +63,7 @@ public class ChatMessagingController {
 
             SendResult result = chat.sendMessage(senderId, cmd.conversationId(), id, cmd.body());
 
-            // Committed by now. A retry of an already-stored message is acked again but not
-            // pushed again; anyone who missed the first push catches up by seq.
+            // Saved by now. A retry is acked again but not pushed again.
             if (!result.duplicate()) {
                 MessageEvent event = new MessageEvent(result.message());
                 messaging.convertAndSendToUser(String.valueOf(result.userLow()), "/queue/messages", event);
@@ -106,8 +89,7 @@ public class ChatMessagingController {
         if (value == null) throw AppException.badRequest("clientMsgId is required");
         try {
             UUID uuid = UUID.fromString(value);
-            // UUID.fromString also accepts non-canonical forms like "1-1-1-1-1". Requiring the
-            // canonical 36-character form means one id can't be written two ways to dodge de-duplication.
+            // Only accept the standard 36-character format.
             if (!uuid.toString().equalsIgnoreCase(value)) throw new IllegalArgumentException();
             return uuid;
         } catch (IllegalArgumentException e) {

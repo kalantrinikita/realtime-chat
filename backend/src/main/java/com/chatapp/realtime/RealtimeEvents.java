@@ -3,17 +3,13 @@ package com.chatapp.realtime;
 import com.chatapp.auth.User;
 import com.chatapp.chat.ChatModels.MessageView;
 
-/**
- * JSON payloads sent over STOMP. Each carries a "type" so the browser can treat every queue with
- * one handler, and both sides ignore fields they don't know: a tab left open for days runs last
- * week's JavaScript, and a deploy must not break it.
- */
+/** Messages sent over the WebSocket. Each one has a "type" field so the browser knows what it is. */
 public final class RealtimeEvents {
     public static final int PROTOCOL_VERSION = 1;
 
     private RealtimeEvents() {}
 
-    /** client -> /app/send. Boxed types so a missing field is a validation error, not a silent 0. */
+    /** Sent by the browser to /app/send. */
     public record SendCommand(String clientMsgId, Long conversationId, String body) {}
 
     public record ReadyEvent(String type, int protocol, User user) {

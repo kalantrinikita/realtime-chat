@@ -14,24 +14,13 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 
 /**
- * STOMP over WebSocket at /ws, with Spring's in-memory ("simple") broker.
- *
- * <p>Destinations used (everything else is refused by {@link StompDestinationGuard}):
- * <pre>
- *   client SEND  /app/hello            -> server replies on /user/queue/ready (subscriptions are live)
- *   client SEND  /app/send             -> server replies on /user/queue/acks or /user/queue/errors
- *   server push  /user/queue/messages  -> new message in one of my conversations (every tab)
- * </pre>
- *
- * <p>Spring handles the WebSocket protocol, STOMP framing and routing to sessions. What it does NOT
- * give you, and what this app adds on top: authentication on the handshake, per-conversation
- * ordering, idempotent retries, persistence before delivery, catch-up after a reconnect, and
- * stopping clients from subscribing to or sending into other users' queues.
+ * WebSocket setup: STOMP at /ws with Spring's in-memory broker.
+ * Clients send to /app/hello and /app/send, and listen on /user/queue/ready, acks, errors and messages.
  */
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
-    /** Both directions: the broker pings every 10 s, and expects the browser to do the same. */
+    /** Heartbeat interval in both directions, used to detect dead connections. */
     private static final long HEARTBEAT_MS = 10_000;
 
     private final AuthService auth;
@@ -51,21 +40,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // Plain WebSocket, no SockJS fallback: every current browser supports WebSocket, and SockJS
-        // adds HTTP-streaming transports that complicate proxies and auth for no benefit here.
+        // Plain WebSocket, no SockJS fallback.
         StompWebSocketEndpointRegistration endpoint = registry.addEndpoint("/ws")
                 .addInterceptors(new SessionHandshakeInterceptor(auth, cookies))
                 .setHandshakeHandler(new UserIdHandshakeHandler());
-        // Cross-site WebSocket hijacking: WebSockets aren't covered by CORS, so without an Origin
-        // check any website could open a socket that carries our user's cookie. Spring allows
-        // same-origin only unless origins are listed explicitly.
+        // Only our own site can open a WebSocket, unless other origins are configured.
         if (!props.allowedOrigins().isEmpty()) {
             endpoint.setAllowedOriginPatterns(props.allowedOrigins().toArray(String[]::new));
         }
-        // The inbound channel is a thread pool, so two frames from one browser can be handled in
-        // parallel and finish out of order: two quick sends could be stored in reverse order, or the
-        // "hello" handled before the SUBSCRIBE frames sent ahead of it. This makes Spring process
-        // each session's frames one at a time, in arrival order. Our "ready" handshake relies on it.
+        // Handle each client's frames one at a time, in the order they arrive.
         registry.setPreserveReceiveOrder(true);
     }
 
@@ -76,8 +59,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.enableSimpleBroker("/queue")
                 .setHeartbeatValue(new long[]{HEARTBEAT_MS, HEARTBEAT_MS})
                 .setTaskScheduler(heartbeatScheduler());
-        // Same problem on the way out: without this, messages to one session can overtake each
-        // other in the outbound thread pool (the client would see #8 before #7).
+        // Send to each client in order too.
         registry.setPreservePublishOrder(true);
     }
 
@@ -86,26 +68,17 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registration.interceptors(guard);
     }
 
-    /**
-     * Slow consumers: if a browser stops reading (backgrounded phone, dead network path), Spring
-     * buffers outgoing messages for it. These limits disconnect it instead of letting the buffer
-     * grow without bound. That's safe because every message is in Postgres: when the client
-     * reconnects it fetches everything after its last seq.
-     */
+    /** Size and buffer limits. A client that stops reading is disconnected and catches up later. */
     @Override
     public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
         registration
-                .setMessageSizeLimit(64 * 1024)        // a 4000-character message is at most ~16 KB of UTF-8
+                .setMessageSizeLimit(64 * 1024)
                 .setSendTimeLimit(10_000)
                 .setSendBufferSizeLimit(512 * 1024)
                 .addDecoratorFactory(liveSessions::decorate);
     }
 
-    /**
-     * Heartbeats detect half-open connections: a laptop that went to sleep or a phone that changed
-     * networks never sends a TCP FIN, so without traffic neither side notices for a long time.
-     * 10 s also stays well under common proxy idle timeouts (nginx and AWS ALB: 60 s).
-     */
+    /** Thread that sends and checks the heartbeats. */
     private static ThreadPoolTaskScheduler heartbeatScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(1);

@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * Request/response side of chat: the conversation list, starting a chat, and history/catch-up.
- * Sending and live delivery go over STOMP instead (see ChatMessagingController).
+ * REST endpoints for the conversation list, starting a chat and loading messages.
+ * Sending messages goes over the WebSocket (see ChatMessagingController).
  */
 @RestController
 @RequestMapping("/api/conversations")
@@ -38,10 +38,7 @@ public class ChatController {
         return Map.of("conversations", chat.listConversations(me.id()));
     }
 
-    /**
-     * Start (or reopen) a chat by the other person's exact email. There is deliberately no
-     * "list all users" endpoint: on a public deployment that would hand out everyone's address.
-     */
+    /** Starts (or reopens) a chat with the user who has this email. */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public Map<String, Object> start(@RequestAttribute(AuthInterceptor.CURRENT_USER) User me, @RequestBody StartRequest req) {
         if (req.email() == null || req.email().isBlank()) throw AppException.badRequest("Email is required");
