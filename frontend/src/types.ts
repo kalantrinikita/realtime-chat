@@ -47,7 +47,7 @@ export interface PendingMessage {
 
 export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting';
 
-/** Server -> client STOMP payloads (see RealtimeEvents.java). One handler for every queue. */
+/** Server -> client STOMP payloads. One handler for every queue. */
 export type ServerEvent =
   | { type: 'ready'; protocol: number; user: User }
   | { type: 'ack'; clientMsgId: string; message: Message }

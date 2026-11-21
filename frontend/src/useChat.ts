@@ -7,16 +7,9 @@ import { uuidv4 } from './uuid';
 
 const PAGE_SIZE = 50;
 const RESYNC_PAGE = 100;
-/** A message put on the wire without an ack for this long is shown as failed (retry is safe). */
+/** A message put on the wire without an ack for this long is shown as failed. */
 const ACK_TIMEOUT_MS = 15_000;
 
-/**
- * Glue between the STOMP socket, the REST API and the reducer. Owns the recovery logic:
- *  - on every (re)connect: refresh the conversation list, fill each open thread from its
- *    contiguous high-water mark, then resend anything still pending (same clientMsgId, so the
- *    server dedupes anything that did get through before the drop);
- *  - on a pushed message that skips a seq: fetch the hole.
- */
 export function useChat(me: User, onSessionEnded: () => void) {
   const [state, dispatch] = useReducer(reducer, initialState);
   // Event handlers outlive renders; they read the latest state through this ref.
@@ -41,11 +34,6 @@ export function useChat(me: User, onSessionEnded: () => void) {
     }
   }, [handleApiError]);
 
-  /**
-   * Fetch everything after the thread's contiguous high-water mark. Concurrent calls for the same
-   * conversation collapse into one run plus at most one follow-up, so a burst of out-of-order
-   * pushes doesn't trigger a burst of identical requests.
-   */
   const fillThread = useCallback(
     async (conversationId: number) => {
       const inflight = fillsInFlight.current;
@@ -148,8 +136,7 @@ export function useChat(me: User, onSessionEnded: () => void) {
     };
   }, []);
 
-  // A send whose ack never came while the socket stayed up is surfaced as failed rather than
-  // spinning forever. Retrying reuses its clientMsgId, so it is safe even if it did get stored.
+  // A send whose ack never came while the socket stayed up is surfaced as failed.
   useEffect(() => {
     const timer = setInterval(() => {
       const s = stateRef.current;
@@ -164,7 +151,6 @@ export function useChat(me: User, onSessionEnded: () => void) {
     return () => clearInterval(timer);
   }, []);
 
-  // A hole can also appear while a first page was loading; fill it once loading finishes.
   useEffect(() => {
     for (const [id, thread] of Object.entries(state.threads)) {
       if (needsFill(thread)) void fillThread(Number(id));

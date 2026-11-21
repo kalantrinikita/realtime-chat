@@ -6,7 +6,7 @@ export interface SocketHandlers {
   onStatus(status: ConnectionStatus): void;
   /** The server says this login session is gone (logged out elsewhere, or expired). */
   onSessionEnded(): void;
-  /** Must resolve to true if the login session is still valid. See beforeConnect for why. */
+  /** Must resolve to true if the login session is still valid. */
   checkSession(): Promise<boolean>;
 }
 
@@ -18,11 +18,6 @@ const BACKOFF_MAX_MS = 30_000;
 /** Server close code meaning "you were logged out": don't reconnect. */
 const LOGGED_OUT = 4001;
 
-/**
- * A STOMP connection that stays connected: reconnects with jittered backoff, detects dead
- * connections through STOMP heartbeats, and tells the UI its status. Recovering messages (catch-up,
- * resending pending ones) is not done here: useChat does it when the server says "ready".
- */
 export class ChatSocket {
   private readonly client: Client;
   private attempt = 0;
@@ -38,15 +33,11 @@ export class ChatSocket {
     this.client = new Client({
       brokerURL: url,
       // The server sends a heartbeat every 10 s. If nothing arrives for a while, the connection is
-      // treated as dead. That's how a laptop waking from sleep (socket still "open", but every byte
-      // sent into it vanishes) gets noticed instead of hanging silently.
+      // treated as dead.
       heartbeatIncoming: HEARTBEAT_MS,
       heartbeatOutgoing: HEARTBEAT_MS,
-      // On a dead connection a normal close() waits for a closing handshake that never comes;
-      // drop the socket immediately instead so the reconnect starts right away.
       discardWebsocketOnCommFailure: true,
       connectionTimeout: 8_000,
-      // The library's own delay is fixed; the real, randomised delay is added in beforeConnect.
       reconnectDelay: 1,
       debug: () => {},
       beforeConnect: () => this.beforeConnect(),
