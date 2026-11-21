@@ -7,7 +7,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -18,7 +17,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /** REST endpoints for sign-up, login, logout and the current user. */
-
 @RestController
 @RequestMapping("/api")
 public class AuthController {
@@ -29,22 +27,13 @@ public class AuthController {
     private final SessionCookies cookies;
     private final AppProperties props;
     private final LiveSessionRegistry liveSessions;
-    private final JdbcTemplate jdbc;
 
     public AuthController(AuthService auth, SessionCookies cookies, AppProperties props,
-                          LiveSessionRegistry liveSessions, JdbcTemplate jdbc) {
+                          LiveSessionRegistry liveSessions) {
         this.auth = auth;
         this.cookies = cookies;
         this.props = props;
         this.liveSessions = liveSessions;
-        this.jdbc = jdbc;
-    }
-
-    /** Used by the Docker healthcheck; to verify that the DB makes "can actually serve". */
-    @GetMapping("/health")
-    public Map<String, Object> health() {
-        jdbc.queryForObject("SELECT 1", Integer.class);
-        return Map.of("status", "ok", "liveSockets", liveSessions.count());
     }
 
     /** Settings the sign-up page needs before login. */

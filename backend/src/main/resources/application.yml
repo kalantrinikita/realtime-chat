@@ -12,16 +12,16 @@ spring:
   application:
     name: realtime-chat
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/chat}
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/chat}
     username: ${DATABASE_USER:chat}
     password: ${DATABASE_PASSWORD:chat-local-only}
     hikari:
       # Maximum number of database connections.
       maximum-pool-size: ${DATABASE_POOL_SIZE:10}
+      # In milliseconds. A value like "5s" doesn't work here.
       connection-timeout: 5000
   threads:
     virtual:
-      # Request threads block on JDBC; virtual threads make that cheap.
       enabled: true
   lifecycle:
     timeout-per-shutdown-phase: 15s
@@ -29,13 +29,14 @@ spring:
     resources:
       cache:
         cachecontrol:
+          # Browsers always re-check index.html, so they get the latest version.
           no-cache: true
 
 chat:
   cookie-secure: ${COOKIE_SECURE:false}
   session-ttl: ${SESSION_TTL:30d}
   invite-code: ${INVITE_CODE:}
-  # Extra origins allowed to open the WebSocket.
+  # Other sites allowed to open the WebSocket. Empty means only this site.
   allowed-origins: ${ALLOWED_ORIGINS:}
 
 logging:

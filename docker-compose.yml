@@ -13,8 +13,8 @@ services:
     environment:
       POSTGRES_DB: chat
       POSTGRES_USER: chat
-      # Only applied when the data volume is first created; changing it later does NOT change the
-      # password inside an existing volume (see README troubleshooting).
+      # Only applied when the data volume is first created. To change it later, delete the volume
+      # with `docker compose down -v` (this deletes all data).
       POSTGRES_PASSWORD: ${DB_PASSWORD:-chat-local-only}
     volumes:
       - db-data:/var/lib/postgresql/data

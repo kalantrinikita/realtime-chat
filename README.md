@@ -2,11 +2,12 @@
 
 A small real-time, one-to-one chat web app, like a minimal web WhatsApp. People sign up with their
 email, start a chat by typing someone's email, and messages appear on the other person's screen
-straight away. Messages arrive in the same order on every device, survive refreshes and restarts,
-and are never lost or duplicated when the network drops.
+straight away. Once the server has a message, it arrives in the same order on every device,
+survives refreshes and restarts, and is never lost or duplicated, even when the network drops.
 
 **Contents:** [Tech stack](#tech-stack) · [Run it with Docker](#run-it-with-docker) ·
 [System design](#system-design) · [What happens when Alice sends a message](#what-happens-when-alice-sends-a-message) ·
+[Why it's built this way](#why-its-built-this-way) · [Known limitations and trade-offs](#known-limitations-and-trade-offs) ·
 [Tests](#tests) · [Future use cases and improvements](#future-use-cases-and-improvements) ·
 [API spec](#api-spec)
 
@@ -95,7 +96,26 @@ sequenceDiagram
 - **Bob is offline:** step 5 reaches nobody. When Bob opens the app, it loads every message after
   the last `seq` it has, so he gets them all, in order.
 - **Alice's connection drops before step 4:** her app resends with the same `clientMsgId` when it
-  reconnects. The server recognises it and returns the saved message instead of storing it twice.
+  reconnects, as long as the tab stays open. The server recognises it and returns the saved message
+  instead of storing it twice.
+
+## Why it's built this way
+
+- **STOMP instead of raw WebSocket:** STOMP gives message routing, subscriptions, per-user queues and heartbeats out of the box, and `@stomp/stompjs` handles reconnecting, so the app's own code can focus on ordering, retries and access rules. The cost is a few STOMP pitfalls that had to be closed by hand: guessable user queues, no confirmation that a subscription is active, and frames processed in parallel.
+- **Numbering by `seq` instead of timestamps:** clocks on different machines disagree and two messages can share a millisecond, while a per-chat counter taken under a row lock always matches the order messages were saved. Because the numbers have no gaps, "everything after 41" is a cursor that can't skip a message, and a jump from 41 to 43 tells the browser exactly what's missing.
+- **Session cookie instead of JWT:** the browser's WebSocket API can't send an `Authorization` header but does send cookies, and an HttpOnly cookie can't be read by page scripts. Sessions live in the database, so logout takes effect immediately, even on open sockets, while a JWT stays valid until it expires.
+- **Sending over the WebSocket instead of REST:** the socket is already open for receiving, so a send is one small frame instead of a full HTTP request, and the server handles each connection's frames in order, so two quick messages can't swap places. History and catch-up stay on REST, because they are simple request-and-response calls that are easy to page.
+
+## Known limitations and trade-offs
+
+- **Single server only:** the in-memory STOMP broker and `LiveSessionRegistry` both live inside one app instance, so with two instances, users on different servers wouldn't see each other's messages and a logout wouldn't close sockets on the other server.
+- **Session expiry doesn't close open sockets:** the session is only checked when the WebSocket opens, so a socket opened before the 30-day expiry keeps working until it disconnects (logging out does close it straight away).
+- **Account emails can be discovered:** login takes the same time whether or not an email exists, but sign-up answers "An account with this email already exists" and starting a chat answers "No user with that email", which both reveal it.
+- **Unsent messages are kept only in memory:** a message typed while offline is resent when the connection comes back, but closing the tab before then loses it; once the server has acked a message, it's never lost.
+- **Unread counts live in the browser:** they reset on refresh, because the server doesn't store how far each person has read.
+- **New chats appear for the other person only with the first message:** starting a chat doesn't notify the other side, so an empty chat shows up for them once a message arrives.
+- **Messages in one chat are saved one at a time:** the row lock that keeps `seq` in order makes two senders in the same chat wait for each other, which is unnoticeable with two people but would matter for a very busy group chat.
+- **The message count assumes nothing is deleted:** the chat header shows `lastSeq` as the count, which would be wrong once messages can be deleted.
 
 ## Tests
 
@@ -430,4 +450,5 @@ message from the server has a `type` field.
 | server → browser | `/user/queue/errors` | `{type: "error", clientMsgId, code, message, retryable}` |
 
 Only these destinations are allowed; anything else is dropped. Close code `4001` means "logged
-out", and the browser stops reconnecting.
+out", and the browser stops reconnecting. If `protocol` in `ready` isn't the version the page's code
+understands (a tab left open across a breaking deploy), the page reloads once to get the new code.

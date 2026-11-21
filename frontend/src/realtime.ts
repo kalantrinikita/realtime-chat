@@ -6,7 +6,7 @@ export interface SocketHandlers {
   onStatus(status: ConnectionStatus): void;
   /** The server says this login session is gone (logged out elsewhere, or expired). */
   onSessionEnded(): void;
-  /** Must resolve to true if the login session is still valid. */
+  /** Must resolve to true if the login session is still valid. See beforeConnect for why. */
   checkSession(): Promise<boolean>;
 }
 
@@ -17,7 +17,14 @@ const BACKOFF_BASE_MS = 500;
 const BACKOFF_MAX_MS = 30_000;
 /** Server close code meaning "you were logged out": don't reconnect. */
 const LOGGED_OUT = 4001;
+/** Protocol version this code understands. The server sends its own in "ready". */
+const PROTOCOL_VERSION = 1;
 
+/**
+ * A STOMP connection that stays connected: reconnects with jittered backoff, detects dead
+ * connections through STOMP heartbeats, and tells the UI its status. Recovering messages (catch-up,
+ * resending pending ones) is not done here: useChat does it when the server says "ready".
+ */
 export class ChatSocket {
   private readonly client: Client;
   private attempt = 0;
@@ -33,11 +40,15 @@ export class ChatSocket {
     this.client = new Client({
       brokerURL: url,
       // The server sends a heartbeat every 10 s. If nothing arrives for a while, the connection is
-      // treated as dead.
+      // treated as dead. That's how a laptop waking from sleep (socket still "open", but every byte
+      // sent into it vanishes) gets noticed instead of hanging silently.
       heartbeatIncoming: HEARTBEAT_MS,
       heartbeatOutgoing: HEARTBEAT_MS,
+      // On a dead connection a normal close() waits for a closing handshake that never comes;
+      // drop the socket immediately instead so the reconnect starts right away.
       discardWebsocketOnCommFailure: true,
       connectionTimeout: 8_000,
+      // The library's own delay is fixed; the real, randomised delay is added in beforeConnect.
       reconnectDelay: 1,
       debug: () => {},
       beforeConnect: () => this.beforeConnect(),
@@ -127,11 +138,34 @@ export class ChatSocket {
       return;
     }
     if (event.type === 'ready') {
+      if (event.protocol !== PROTOCOL_VERSION) {
+        this.reloadForNewVersion(event.protocol);
+        return;
+      }
       this.ready = true;
       this.attempt = 0;
       this.handlers.onStatus('open');
     }
     this.handlers.onEvent(event);
+  }
+
+  /**
+   * The server was updated to a protocol this tab's code doesn't understand, so reload once to get
+   * the new code (index.html is never cached). If a reload already happened, stop instead of looping.
+   */
+  private reloadForNewVersion(serverVersion: number): void {
+    this.stop();
+    const key = 'chat.reloadedForProtocol';
+    try {
+      if (sessionStorage.getItem(key) !== String(serverVersion)) {
+        sessionStorage.setItem(key, String(serverVersion));
+        window.location.reload();
+        return;
+      }
+    } catch {
+      // No session storage: don't risk a reload loop.
+    }
+    console.error(`This app version doesn't support server protocol ${serverVersion}. Refresh the page.`);
   }
 
   private onClose(event: CloseEvent): void {
