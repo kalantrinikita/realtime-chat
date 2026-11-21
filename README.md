@@ -123,7 +123,7 @@ openapi: 3.0.3
 info:
   title: Realtime Chat API
   version: 1.0.0
-  description: REST API of the chat app. Live messages use the WebSocket at /ws (see docs/DESIGN.md).
+  description: REST API of the chat app.
 servers:
   - url: http://localhost:8080
 security:
