@@ -1,13 +1,14 @@
 # Realtime Chat
 
-A small real-time, one-to-one chat web app. People sign up with their
+A small real-time, one-to-one chat web app, like a minimal web WhatsApp. People sign up with their
 email, start a chat by typing someone's email, and messages appear on the other person's screen
 straight away. Messages arrive in the same order on every device, survive refreshes and restarts,
 and are never lost or duplicated when the network drops.
 
 **Contents:** [Tech stack](#tech-stack) · [Run it with Docker](#run-it-with-docker) ·
 [System design](#system-design) · [What happens when Alice sends a message](#what-happens-when-alice-sends-a-message) ·
-[Tests](#tests) · [API spec](#api-spec)
+[Tests](#tests) · [Future use cases and improvements](#future-use-cases-and-improvements) ·
+[API spec](#api-spec)
 
 ---
 
@@ -73,8 +74,7 @@ every open tab of both people.
 - **PostgreSQL:** stores users, sessions, conversations and messages. Nothing is shown to anyone
   until it's saved.
 
-Messages are always ordered by `seq`, never by time. Why it's built this way, and the edge cases it
-handles, are in [docs/DESIGN.md](docs/DESIGN.md).
+Messages are always ordered by `seq`, never by time.
 
 ## What happens when Alice sends a message
 
@@ -109,12 +109,36 @@ Integration tests are skipped when `TEST_DATABASE_URL` isn't set, and refuse to 
 database whose name doesn't contain `test`, because they empty the tables. The `chat_test` database
 is created the first time the Postgres volume is created. Unit tests also run during the Docker build.
 
+## Future use cases and improvements
+
+### New features
+
+- **Delivered and read ticks (✓✓):** store one "delivered up to seq" and one "read up to seq" number per person per chat, and push it to the other person when it moves.
+- **Typing indicator and online status:** send short-lived WebSocket events that are never stored, at most every few seconds, and hide them after a timeout.
+- **Edit and delete messages:** keep the row and mark it edited or deleted so `seq` stays gap-free, then push the change to both people.
+- **Search:** use Postgres full-text search (`tsvector` with a GIN index) over the messages in my own chats.
+- **Group chats:** replace `user_low`/`user_high` with a `conversation_members` table, keep `seq` per conversation, and push each message to every member.
+- **Images and files:** upload them to object storage (MinIO locally, S3 in the cloud) and store only a link in the message.
+- **Notifications when offline:** send browser push notifications through a service worker.
+- **Mobile app:** start with an installable web app (PWA), since a native app could reuse the same REST and WebSocket API.
+
+### Technical improvements
+
+- **Rate limiting:** limit login, sign-up and sending per IP and per user to stop password guessing and spam.
+- **Account security:** add email verification, password reset and a lock after repeated failed logins.
+- **More than one server:** replace the in-memory broker with RabbitMQ as an external STOMP broker, which is safe because clients catch up by `seq` when they switch servers.
+- **Backups:** copy a nightly `pg_dump` off the server and regularly test restoring it.
+- **Monitoring:** expose Spring Boot Actuator metrics for open sockets, send-to-ack time, slow-client disconnects and database pool waits.
+- **End-to-end tests:** test two real users over the WebSocket with `WebSocketStompClient`, plus a browser test with Playwright.
+- **Infrastructure as code:** create the server, firewall, disk and DNS record with Terraform instead of by hand.
+- **Data growth:** partition the messages table by time and archive old chats.
+
 ## API spec
 
 The REST API is under `/api`. Register and login set a session cookie, which the other endpoints
 need. POST bodies must be JSON (`Content-Type: application/json`), and every error has the shape
-`{"error": {"code": "...", "message": "..."}}`. Live messages go over the WebSocket at `/ws`; those
-are listed in [docs/DESIGN.md](docs/DESIGN.md#5-websocket-protocol).
+`{"error": {"code": "...", "message": "..."}}`. Live messages go over the WebSocket at `/ws`; see
+[WebSocket messages](#websocket-messages) below the spec.
 
 To view it as interactive docs, paste the spec into [editor.swagger.io](https://editor.swagger.io).
 
@@ -123,7 +147,7 @@ openapi: 3.0.3
 info:
   title: Realtime Chat API
   version: 1.0.0
-  description: REST API of the chat app.
+  description: REST API of the chat app. Live messages use the WebSocket at /ws, which is not part of this spec.
 servers:
   - url: http://localhost:8080
 security:
@@ -283,8 +307,8 @@ paths:
         Otherwise returns the newest messages, or the newest before `before` (used for older pages).
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
-        - { name: after, in: query, schema: { type: integer, format: int64 }, description: Return messages with seq greater than this }
-        - { name: before, in: query, schema: { type: integer, format: int64 }, description: Return messages with seq less than this }
+        - { name: after, in: query, schema: { type: integer, format: int64 }, description: 'Return messages with seq greater than this' }
+        - { name: before, in: query, schema: { type: integer, format: int64 }, description: 'Return messages with seq less than this' }
         - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 100 } }
       responses:
         '200':
@@ -332,8 +356,8 @@ components:
       properties:
         email: { type: string, format: email, maxLength: 254, example: alice@example.com }
         password: { type: string, minLength: 8, maxLength: 128 }
-        displayName: { type: string, maxLength: 50, description: Defaults to the part of the email before @ }
-        inviteCode: { type: string, description: Only needed when /api/config says inviteRequired }
+        displayName: { type: string, maxLength: 50, description: 'Defaults to the part of the email before @' }
+        inviteCode: { type: string, description: 'Only needed when /api/config says inviteRequired' }
 
     LoginRequest:
       type: object
@@ -347,22 +371,22 @@ components:
       properties:
         id: { type: integer, format: int64 }
         conversationId: { type: integer, format: int64 }
-        seq: { type: integer, format: int64, description: Order of the message in its conversation (1, 2, 3, ...) }
+        seq: { type: integer, format: int64, description: 'Order of the message in its conversation (1, 2, 3, ...)' }
         senderId: { type: integer, format: int64 }
-        clientMsgId: { type: string, format: uuid, description: Id chosen by the sender's browser, reused on retries }
+        clientMsgId: { type: string, format: uuid, description: 'Id chosen by the sender''s browser, reused on retries' }
         body: { type: string, minLength: 1, maxLength: 4000 }
-        createdAt: { type: integer, format: int64, description: Epoch milliseconds, for display only }
+        createdAt: { type: integer, format: int64, description: 'Epoch milliseconds, for display only' }
 
     Conversation:
       type: object
       properties:
         id: { type: integer, format: int64 }
         peer: { $ref: '#/components/schemas/User' }
-        lastSeq: { type: integer, format: int64, description: seq of the newest message (0 if none) }
+        lastSeq: { type: integer, format: int64, description: 'seq of the newest message (0 if none)' }
         lastMessage:
           allOf: [{ $ref: '#/components/schemas/Message' }]
           nullable: true
-        updatedAt: { type: integer, format: int64, description: Epoch milliseconds of the last activity }
+        updatedAt: { type: integer, format: int64, description: 'Epoch milliseconds of the last activity' }
 
     Error:
       type: object
@@ -390,3 +414,20 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
 ```
+
+### WebSocket messages
+
+STOMP over WebSocket at `/ws`. The session cookie is checked when the connection opens. Every
+message from the server has a `type` field.
+
+| Direction | Destination | Payload |
+|---|---|---|
+| browser → server | `SEND /app/hello` | `{}`, sent right after subscribing |
+| server → browser | `/user/queue/ready` | `{type: "ready", protocol: 1, user}`: subscriptions are active, catch up now |
+| browser → server | `SEND /app/send` | `{clientMsgId, conversationId, body}` |
+| server → browser | `/user/queue/acks` | `{type: "ack", clientMsgId, message}`: saved, `message.seq` assigned |
+| server → browser | `/user/queue/messages` | `{type: "message", message}`: a new message in one of my chats (all my tabs) |
+| server → browser | `/user/queue/errors` | `{type: "error", clientMsgId, code, message, retryable}` |
+
+Only these destinations are allowed; anything else is dropped. Close code `4001` means "logged
+out", and the browser stops reconnecting.
