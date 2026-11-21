@@ -21,9 +21,9 @@ services:
       # Creates the chat_test database for the integration tests on first start.
       - ./deploy/db-init:/docker-entrypoint-initdb.d:ro
     ports:
-      # Bound to 127.0.0.1 only, for IntelliJ runs and tests. 5433, not 5432, so it doesn't clash
-      # with a Postgres already installed on your machine.
-      - "127.0.0.1:${DB_PORT:-5433}:5432"
+      # 127.0.0.1 only: reachable from this machine (IntelliJ, DB tools, tests), not from the network.
+      # If another Postgres already uses 5432 on this machine, pick another port with DB_PORT in .env.
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U chat -d chat"]
       interval: 2s
@@ -32,6 +32,8 @@ services:
     restart: unless-stopped
 
   app:
+    # Built locally with --build; on the server the pipeline sets APP_IMAGE to the image it pushed.
+    image: ${APP_IMAGE:-realtime-chat-app}
     build:
       context: .
       dockerfile: backend/Dockerfile

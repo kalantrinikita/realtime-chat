@@ -1,0 +1,75 @@
+# Deploys an image built by the CI workflow to the server. Started by hand:
+# Actions > Deploy > Run workflow. Leave "version" empty for the latest main, or give an older
+# commit to roll back.
+#
+# Repository secrets (Settings > Secrets and variables > Actions > Secrets):
+#   DEPLOY_HOST      server IP or name
+#   DEPLOY_USER      user on the server that can run docker, e.g. deploy
+#   SSH_PRIVATE_KEY  private key whose public key is on the server
+#   SSH_KNOWN_HOSTS  output of `ssh-keyscan <server>`
+# Repository variable (same page, Variables tab):
+#   SITE_ADDRESS     the domain, e.g. chat.example.com
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Commit to deploy (short or full SHA). Empty = latest main.
+        required: false
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: production   # one deploy at a time
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SERVER: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+      DEPLOY_DIR: /opt/realtime-chat
+      COMPOSE: docker compose -f docker-compose.yml -f docker-compose.prod.yml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick the image
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="${VERSION:-$GITHUB_SHA}"
+          echo "APP_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}/app:${VERSION::7}" >> "$GITHUB_ENV"
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Copy the compose files to the server
+        run: scp -i ~/.ssh/deploy_key -r docker-compose.yml docker-compose.prod.yml deploy "$SERVER:$DEPLOY_DIR/"
+
+      - name: Let the server pull the image
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$REGISTRY_TOKEN" | ssh -i ~/.ssh/deploy_key "$SERVER" "docker login ghcr.io -u $GITHUB_ACTOR --password-stdin"
+
+      - name: Pull and restart
+        run: |
+          ssh -i ~/.ssh/deploy_key "$SERVER" "cd $DEPLOY_DIR \
+            && sed -i '/^APP_IMAGE=/d' .env \
+            && echo 'APP_IMAGE=$APP_IMAGE' >> .env \
+            && $COMPOSE pull app \
+            && $COMPOSE up -d --no-build --remove-orphans"
+
+      - name: Check the site
+        # The first deploy also waits here while Caddy gets the HTTPS certificate.
+        run: curl -fsS --retry 24 --retry-delay 5 --retry-all-errors "https://${{ vars.SITE_ADDRESS }}/api/health"

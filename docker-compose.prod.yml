@@ -1,4 +1,5 @@
-# Overlay for a server with a real domain. Used together with the base file:
+# Overlay for a server with a real domain. Used together with the base file.
+# The Deploy workflow (.github/workflows/deploy.yml) uses it with the image built in CI. By hand:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
