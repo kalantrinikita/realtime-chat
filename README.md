@@ -1,13 +1,13 @@
 # Realtime Chat
 
-A small real-time, one-to-one chat web app, like a minimal web WhatsApp. People sign up with their
+A small real-time, one-to-one chat web app. People sign up with their
 email, start a chat by typing someone's email, and messages appear on the other person's screen
 straight away. Messages arrive in the same order on every device, survive refreshes and restarts,
 and are never lost or duplicated when the network drops.
 
 **Contents:** [Tech stack](#tech-stack) · [Run it with Docker](#run-it-with-docker) ·
 [System design](#system-design) · [What happens when Alice sends a message](#what-happens-when-alice-sends-a-message) ·
-[Tests](#tests) · [API spec](#api-spec) · [Design notes](docs/DESIGN.md)
+[Tests](#tests) · [API spec](#api-spec)
 
 ---
 
